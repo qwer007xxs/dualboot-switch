@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dualboot-switch"
+version = "0.1.0"
+description = "One-shot reboot into your other OS, with a GUI. Windows and Linux."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.8"
+keywords = ["dual-boot", "uefi", "efibootmgr", "bcdedit", "grub", "systemd-boot"]
+classifiers = [
+  "Environment :: X11 Applications",
+  "Environment :: Win32 (MS Windows)",
+  "Intended Audience :: End Users/Desktop",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: Microsoft :: Windows",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python :: 3",
+  "Topic :: System :: Boot",
+]
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=7"]
+
+[project.scripts]
+dualboot-switch = "dualboot_switch.cli:main"
+
+[project.gui-scripts]
+dualboot-switch-gui = "dualboot_switch.gui:main"
+
+[tool.setuptools]
+packages = ["dualboot_switch"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
