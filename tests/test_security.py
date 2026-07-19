@@ -204,3 +204,55 @@ def test_elevation_quoting_cannot_smuggle_extra_arguments():
     naive_parsed = _command_line_to_argv(naive)
     assert naive_parsed != argv
     assert "--backend" in naive_parsed
+
+
+# --------------------------------------------------------------------------- #
+# Elevation relaunch target (regression: installed entry point must re-run)
+# --------------------------------------------------------------------------- #
+
+from dualboot_switch.core import elevation_target  # noqa: E402
+
+
+def test_elevation_target_for_python_source(monkeypatch, tmp_path):
+    script = tmp_path / "run.py"
+    script.write_text("")
+    monkeypatch.setattr("sys.argv", [str(script), "boot", "windows"])
+    monkeypatch.setattr("sys.executable", "/usr/bin/python3")
+    monkeypatch.delattr("sys.frozen", raising=False)
+    target = elevation_target(["boot", "windows"])
+    assert target == ["/usr/bin/python3", str(script), "boot", "windows"]
+
+
+def test_elevation_target_for_installed_entry_point(monkeypatch, tmp_path):
+    """argv[0] is a wrapper exe, NOT a .py file — must re-run it directly.
+
+    The old code produced [python, wrapper.exe, ...], which fails because the
+    interpreter cannot execute a wrapper binary as a script.
+    """
+    wrapper = tmp_path / "dualboot-switch.exe"
+    wrapper.write_bytes(b"MZ")
+    monkeypatch.setattr("sys.argv", [str(wrapper), "boot", "linux"])
+    monkeypatch.setattr("sys.executable", "C:\\Python\\python.exe")
+    monkeypatch.delattr("sys.frozen", raising=False)
+    target = elevation_target(["boot", "linux"])
+    assert target == [str(wrapper), "boot", "linux"]
+    assert "python" not in target[0].lower()
+
+
+def test_elevation_target_for_frozen_app(monkeypatch, tmp_path):
+    exe = tmp_path / "app.bin"
+    exe.write_bytes(b"")
+    monkeypatch.setattr("sys.frozen", True, raising=False)
+    monkeypatch.setattr("sys.executable", str(exe))
+    monkeypatch.setattr("sys.argv", [str(exe), "gui"])
+    target = elevation_target(["gui"])
+    assert target == [str(exe), "gui"]
+
+
+def test_elevation_target_falls_back_to_dash_m(monkeypatch):
+    """If argv[0] points nowhere real, re-run the package via -m."""
+    monkeypatch.setattr("sys.argv", ["/nonexistent/ghost", "list"])
+    monkeypatch.setattr("sys.executable", "/usr/bin/python3")
+    monkeypatch.delattr("sys.frozen", raising=False)
+    target = elevation_target(["list"])
+    assert target == ["/usr/bin/python3", "-m", "dualboot_switch", "list"]
