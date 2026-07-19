@@ -189,22 +189,51 @@ def is_elevated() -> bool:
         return False
 
 
+def elevation_target(argv: list) -> list:
+    """Build the argv that re-runs *this* program, however it was started.
+
+    Getting this wrong is the classic dual-boot-tool bug: when the program is
+    installed as a console/GUI entry point, ``sys.argv[0]`` is a wrapper
+    executable, not a Python file, so the naive ``[python, sys.argv[0], ...]``
+    becomes ``python dualboot-switch.exe ...`` and fails. We handle three
+    launch shapes explicitly.
+    """
+    script = os.path.abspath(sys.argv[0])
+
+    # PyInstaller / cx_Freeze: the executable *is* the app.
+    if getattr(sys, "frozen", False):
+        return [sys.executable, *argv]
+
+    # Ran as a real Python source file (python foo.py / python -m package).
+    if script.lower().endswith(".py") and os.path.isfile(script):
+        return [sys.executable, script, *argv]
+
+    # Installed entry-point wrapper (dualboot-switch[.exe]). Re-run it directly;
+    # the wrapper knows how to bootstrap the interpreter and our package.
+    if os.path.isfile(script):
+        return [script, *argv]
+
+    # Last resort: re-run the package through the interpreter's -m switch.
+    return [sys.executable, "-m", "dualboot_switch", *argv]
+
+
 def relaunch_elevated(argv: Optional[list] = None) -> bool:
     """Try to restart this process with elevated rights.
 
     Returns True if a new elevated process was started (caller should exit).
     """
     argv = argv if argv is not None else sys.argv[1:]
-    script = os.path.abspath(sys.argv[0])
+    target = elevation_target(argv)
 
     if os.name == "nt":
+        # ShellExecuteW wants the program and its parameters separately.
         # list2cmdline applies the exact quoting rules CommandLineToArgvW
         # expects, so an argument containing a quote cannot smuggle in extra
         # arguments to the process we are about to elevate.
-        params = subprocess.list2cmdline([script, *argv])
+        params = subprocess.list2cmdline(target[1:])
         try:
             rc = ctypes.windll.shell32.ShellExecuteW(
-                None, "runas", sys.executable, params, None, 1
+                None, "runas", target[0], params, None, 1
             )
             return int(rc) > 32
         except Exception:
@@ -217,7 +246,7 @@ def relaunch_elevated(argv: Optional[list] = None) -> bool:
         if "-A" in launcher and not os.environ.get("SUDO_ASKPASS"):
             continue
         try:
-            subprocess.Popen([*launcher, sys.executable, script, *argv])
+            subprocess.Popen([*launcher, *target])
             return True
         except Exception:
             continue
